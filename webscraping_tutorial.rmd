@@ -1,0 +1,287 @@
+---
+title: "Webscraping with rvest and rtweet"
+author: "Derek Sollberger"
+date: "2/12/2021"
+output:
+  html_document:
+    toc: true
+    theme: cerulean
+---
+
+```{r libraries, message = FALSE, warning = FALSE}
+library("janitor")    #assists cleaning column names
+library("kableExtra") #produces tables with better aesthetics
+library("rtweet")     #connection to Twitter API
+library("rvest")      #wrappers for web scraping
+library("tidyverse")  #database query tools (e.g. filter) and the magrittr pipe (%>%)
+library("utf8")       #needed to ensure that some tweets were machine readable
+```
+
+# rvest
+
+The `rvest` package has a suite of functions that make webscraping easy for R programmers.  
+* documentation: https://github.com/tidyverse/rvest
+* maintainer: Hadley Wickham <hadley@rstudio.com>
+
+## Navigating a Webpage
+
+* Dataquest: [Tutorial for Web Scraping in R with rvest](https://www.dataquest.io/blog/web-scraping-in-r-rvest/) using CSS selectors
+* Library Carpentry: [Introduction to Web Scraping](https://librarycarpentry.org/lc-webscraping/) with Python and xpath
+
+## Application: Build Roster of Employees
+
+In this section, we will build a data frame of [librarians at UC Merced](http://library.ucmerced.edu/about/contact/staff).  We will leverage the layout of the webpage to organize our data.
+
+```{r}
+# the read_html() function literally loads the HTML code of a webpage
+raw_library_HTML <- read_html("http://library.ucmerced.edu/about/contact/staff")
+```
+
+Next, we can load the webpage in a browser (such as Chrome or Firefox) and use its developer mode to search through the HTML code.
+
+* website: http://library.ucmerced.edu/about/contact/staff
+* developer mode: CTRL-SHIFT-C (in Windows) or CMD-SHIFT-C (in OS-X)
+
+If we want to focus on the employee names, then observe that the desired information is within `div` and `span` HTML tags
+
+```{r}
+library_page_nodes <- raw_library_HTML %>% html_nodes("div")
+```
+
+To narrow our search, notice that the employee names are in `div` tags whose CSS selector is `views-field-title`.
+
+```{r}
+employees <- raw_library_HTML %>%
+  html_nodes("div.views-field-title") %>%
+  html_text(trim = TRUE)
+head(employees)
+```
+
+Similarly, we can obtain the job titles and e-mail addresses for each employee.
+
+```{r}
+job_titles <- raw_library_HTML %>%
+  html_nodes("div.views-field-field-job-title") %>%
+  html_text(trim = TRUE)
+
+contact_info <- raw_library_HTML %>%
+  html_nodes("div.views-field-field-email") %>%
+  html_text(trim = TRUE)
+```
+
+For organization, let us collect the information and place it in a data frame.
+
+```{r}
+library_df <- data.frame(employees, job_titles, contact_info)
+head(library_df)
+```
+
+While the display of the data frame makes sense inside an RStudio programming session, you may want the table in a format that is more aesthetically pleasing for display in a webpage or a paper.  One way to format a dataframe is with the `kableExtra` package.  Upon viewing the [package vignette](https://cran.r-project.org/web/packages/kableExtra/vignettes/awesome_table_in_html.html), we can apply a couple lines of code.
+
+```{r}
+library_df %>%
+  kbl() %>%
+  kable_paper("hover", full_width = FALSE)
+```
+
+
+
+## Application: Extracting a Table from Wikipedia
+
+In this section, we will load a table from the [University of California](https://en.wikipedia.org/wiki/University_of_California) Wikipedia page into an RStudio session.
+
+```{r}
+raw_wikipedia_HTML <- read_html("https://en.wikipedia.org/wiki/University_of_California")
+```
+
+This time, the desired HTML tags are `table`.
+
+```{r}
+wikipedia_page_tables <- raw_wikipedia_HTML %>% html_nodes("table")
+```
+
+For workshop brevity (rather than diving into regular expressions), let us literally guess-and-check the index number in `wikipedia_page_tables` and also use the `html_table` wrapper.
+
+```{r}
+ranking_table <- wikipedia_page_tables[[5]] %>% html_table(fill = TRUE)
+#ranking_table
+```
+
+We can apply the `janitor` and `kableExtra` packages to format the appearance of the data frame.
+
+```{r}
+ranking_table %>%
+  row_to_names(row_number = 1) %>%
+  kbl() %>%
+  kable_material(c("striped", "hover"))
+```
+
+
+
+## Application: Downloading a Gallery of Images
+
+At [Post Secret](https://postsecret.com/), Frank Warren collects postcards from anonymous senders where people confess their secrets.  Warren displays a sample of postcards each week on his blog.  Here we will look at some code that will find the image URLs and download the images.
+
+```{r}
+raw_postsecret_HTML <- read_html("https://postsecret.com/")
+```
+
+In this example, the desired HTML tags are `img`.  Furthermore, we will focus on the `src` *attribute* of the HTML tags.
+
+```{r}
+image_links <- raw_postsecret_HTML %>% html_nodes("img")
+image_urls <- image_links %>% html_attr("src")
+```
+
+Now that we have the URLs for all of the images, one way to collect the images is to use a `for` loop to download the images into a subdirectory.
+
+```{r, eval = FALSE}
+for(i in 1:length(image_urls)){
+  download.file(image_urls[i], paste0("images/",i,".jpg"))
+}
+```
+
+
+
+# rtweet
+
+The `rtweet` package makes it easy for R programmers to connect to the Twitter API.  This allows us to retrieve recent tweets by hashtag, user name, location, or topic search.
+
+* documentation: https://github.com/ropensci/rtweet
+* maintainer: Michael W. Kearney <kearneymw@missouri.edu>
+
+## Application: Retrieve Recent Tweets by Hashtag
+
+The `search_tweets` function will retrieve tweets with a search query from (approximately) the past week.
+
+```{r, eval = FALSE}
+tweet_df <- search_tweets("#ucmerced", n = 100, include_rts = FALSE)
+```
+
+One way we can get a sense of who uses the hashtag is with the `count` function.
+
+```{r, eval = FALSE}
+tweet_df %>% count(screen_name, sort = TRUE)
+```
+
+## Application: Investigating Whom Someone Follows
+
+The `get_friends` function will retrieve the user ID numbers for those a user follows.
+
+```{r, eval = FALSE}
+# https://mobile.twitter.com/ucmerced
+ucm_following <- get_friends("ucmerced")
+```
+
+Next, the `lookup_users` function will thoroughly search by each user ID and output a dataframe of useful information.
+
+```{r, eval = FALSE}
+ucm_following_data <- lookup_users(ucm_following$user_id)
+```
+
+## Application: Finding Mutual Followers
+
+The `get_followers` function will retrieve the user ID numbers for users that follow the account.  Caution: the default API maximum is 5000 followers.
+
+```{r, eval = FALSE}
+user1_followers <- get_followers("ucmerced")
+user2_followers <- get_followers("ucdavis")
+```
+
+We can use the logical function `intersect` to see who follows both accounts.
+
+```{r, eval = FALSE}
+mutual_followers <- intersect(user1_followers, user2_followers)
+mutual_followers_data <- lookup_users(mutual_followers$user_id)
+```
+
+## Application: Simple Tweet Queries
+
+The `get_timeline` and `get_timelines` functions will retrieve recent tweets (i.e. from the present backward in time) from one or more users.
+
+```{r, message = FALSE, warning = FALSE}
+#ucm_timeline <- get_timeline("ucmerced", n = 10000)
+
+# for workshop practicality, I loaded this information in advance
+# into a data frame for later use
+ucm_timeline <- read_csv("ucm3ktweets.csv")
+ucm_timeline$text<- utf8_encode(ucm_timeline$text)
+```
+
+Here is an overview of the 10 most recent tweets.
+
+```{r}
+ucm_timeline %>%
+  select(created_at, text) %>%
+  slice(1:10) %>%
+  kbl(caption = "ucmerced account recent tweets") %>%
+  kable_classic(full_width = TRUE, html_font = "Cambria")
+```
+
+Here is a keyword query.
+
+```{r}
+search_term <- "Munoz"
+ucm_timeline %>%
+  select(created_at, text) %>%
+  filter(str_detect(text, search_term)) %>%
+  kbl(caption = "ucmerced account tweets") %>%
+  kable_classic(full_width = TRUE, html_font = "Cambria")
+```
+
+Which tweets were the most popular?
+
+```{r}
+ucm_timeline %>%
+  select(favorite_count, created_at, text) %>%
+  filter(favorite_count > 100) %>%
+  arrange(desc(favorite_count)) %>%
+  kbl(caption = "ucmerced account tweets") %>%
+  kable_classic(full_width = TRUE, html_font = "Cambria")
+```
+
+## Application: Tracking a Trending Topic
+
+Let us return to tracking a hashtag.
+
+```{r, eval = FALSE}
+tweet_df <- search_tweets("#BlackinMath", n = 1000)
+```
+
+The `ts_plot()` will generate a time-series plot of the tweet query's data frame.  This plot can be customized like any `ggplot` object.
+
+```{r, eval = FALSE}
+tweet_df %>%
+  ts_plot() +
+  labs(title = "#BlackInMath",
+       subtitle = "hashtag trend (2021)",
+       caption = "UC Merced",
+       x = "date",
+       y = "count") +
+  theme_minimal()
+```
+
+
+
+```{r, eval = FALSE}
+tweet_df2 <- search_tweets("#BlackHistoryMonth", n = 1000)
+```
+
+```{r, eval = FALSE}
+tweet_df2 %>%
+  ts_plot(by = "mins") +
+  labs(title = "#BlackHistoryMonth",
+       subtitle = "hashtag trend (2021-02-12)",
+       caption = "UC Merced",
+       x = "date",
+       y = "count") +
+  theme_minimal()
+```
+
+## Addendum
+
+In general, tweet tracking strategy includes
+
+* automating a daily (hourly?) retrieval of tweets
+* build database over time
+* automate analyses

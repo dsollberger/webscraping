@@ -12,3 +12,5 @@ Presenter: Derek Sollberger
 1. Go to https://rstudio.cloud
 2. Create an account (probably with your Google credentials)
 3. Click on access link (provided during meeting)
+
+We will work together in the *template.rmd file in RStudio Cloud.
