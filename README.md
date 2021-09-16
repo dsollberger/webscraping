@@ -16,4 +16,5 @@ Presenter: Derek Sollberger
 5. Click on "Save a Permanent Copy" (upper-right corner, only affects you yourself)
 6. Save As (recommended: replace "template" with your name)
 
+
 We will work together in the *template.rmd file in RStudio Cloud.
